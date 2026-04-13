@@ -1,24 +1,45 @@
 import "dotenv/config";
-import { Client, GatewayIntentBits, Collection } from "discord.js";
+import { Client, Collection, GatewayIntentBits } from "discord.js";
+import { scheduleCommand } from "./commands/schedule";
 import { initDatabase } from "./db/database";
+import { onInteractionCreate } from "./events/interactionCreate";
 import { onReady } from "./events/ready";
+import { startScheduler } from "./services/scheduler";
 
-const client = new Client({
-  intents: [GatewayIntentBits.Guilds]
-});
-
-// Commands collection for future command handling
-(client as any).commands = new Collection();
-
-async function main() {
-  initDatabase();
-
-  client.once("ready", () => onReady(client));
-
-  await client.login(process.env.DISCORD_TOKEN);
+function requireEnv(name: string): string {
+  const value = process.env[name];
+  if (!value || value.trim().length === 0) {
+    throw new Error(`Missing required environment variable: ${name}`);
+  }
+  return value.trim();
 }
 
-main().catch((err) => {
-  console.error(err);
+const token = requireEnv("DISCORD_TOKEN");
+
+async function bootstrap() {
+  initDatabase();
+
+  const client = new Client({
+    intents: [GatewayIntentBits.Guilds],
+  });
+
+  // Command collection
+  client.commands = new Collection();
+  client.commands.set(scheduleCommand.data.name, scheduleCommand);
+
+  client.once("ready", () => {
+    onReady(client);
+    startScheduler(client);
+  });
+
+  client.on("interactionCreate", onInteractionCreate);
+
+  // login
+  await client.login(token);
+}
+
+// bootstrap catch errors
+bootstrap().catch((error) => {
+  console.error("Fatal error during startup:", error);
   process.exit(1);
 });
